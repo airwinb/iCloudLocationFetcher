@@ -7,7 +7,6 @@ import os
 import pyicloud
 import requests
 import signal
-import sys
 import time
 from pyicloud.exceptions import PyiCloudAPIResponseError
 
@@ -16,8 +15,9 @@ NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ = 3600
 ICLOUD_SESSION_TIMEOUT = 280  # in seconds; 300 seconds is too long
 
 # Constants (Do not change)
-SCRIPT_VERSION = "0.4.0"
+SCRIPT_VERSION = "0.5.0"
 SCRIPT_DATE = "2017-11-03"
+URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
 keep_running = True
@@ -31,9 +31,9 @@ class MonitorDevice(object):
     domoticz_authorization = None
     monitor_devices = []
 
-    def __init__(self, name, index):
+    def __init__(self, name, update_url):
         self.name = name
-        self.domoticz_index = index
+        self.update_url = update_url
         self.distance = -1.0
         self.last_update_time = 0
 
@@ -42,52 +42,33 @@ class MonitorDevice(object):
         cls.logger = logger
 
     @classmethod
-    def set_domoticz(cls, domoticz_server, domoticz_authorization):
-        cls.domoticz_server = domoticz_server
-        cls.domoticz_authorization = domoticz_authorization
-
-    @classmethod
     def set_monitor_devices(cls, devices):
         cls.monitor_devices = devices
 
-    @classmethod
-    def get_monitor_device(cls, name):
-        device = None
-        i = 0
-        while device is None and i < len(cls.monitor_devices):
-            if cls.monitor_devices[i].name == name:
-                device = cls.monitor_devices[i]
-            i += 1
-        return device
-
     def update(self, distance, last_update_time):
-        send_to_domoticz = False
+        send_update = False
         if distance != self.distance:
             self.distance = distance
             self.last_update_time = last_update_time
-            send_to_domoticz = True
+            send_update = True
         else:
             if last_update_time - self.last_update_time > NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ:
                 self.last_update_time = last_update_time
-                send_to_domoticz = True
-        if send_to_domoticz:
-            self.send_to_domoticz()
+                send_update = True
+        if send_update:
+            self.send_to_update_url()
 
-    def send_to_domoticz(self):
-        if self.domoticz_server == '':
-            self.logger.info("Skipping update in domoticz '%s' with index %d to value %.1f" % (self.name, self.domoticz_index, self.distance))
+    def send_to_update_url(self):
+        url = self.update_url.replace(URL_DISTANCE_PARAM, str(self.distance))
+        if self.update_url == '':
+            self.logger.info("Skipping sending update for '%s' to '%s'" % (self.name, url))
         else:
-            self.logger.info("Update in domoticz '%s' with index %d to value %.1f" % (self.name, self.domoticz_index, self.distance))
-            domoticz_url = 'http://' + self.domoticz_server + '/json.htm?type=command&param=udevice&idx=' + str(self.domoticz_index) + '&nvalue=0&svalue=' + str(self.distance)
+            self.logger.info("Update '%s' with '%s'" % (self.name, url))
             try:
-                if self.domoticz_authorization == '':
-                    result = requests.get(domoticz_url)
-                else:
-                    headers = {'Authorization': 'Basic bmFzOm5hc2lubG9nZ2Vu'}
-                    result = requests.get(domoticz_url, headers=headers)
-                self.logger.debug("%s -> %s" % (domoticz_url, result))
+                result = requests.get(url)
+                self.logger.debug("%s -> %s" % (url, result))
             except requests.ConnectionError, e:
-                self.logger.error('Domoticz request failed %s - %s' % (domoticz_url, e))
+                self.logger.error('Request failed %s - %s' % (url, e))
 
 
 def distance_meters(origin, destination):
@@ -173,34 +154,26 @@ def main():
     # read other configuration
     apple_id = config.get('GENERAL', 'apple_id')
     apple_password = config.get('GENERAL', 'apple_password')
-    domoticz_server = config.get('GENERAL', 'domoticz_server')
-    domoticz_authorization = config.get('GENERAL', 'domoticz_authorization')
     home_location_str = config.get('GENERAL', 'home_location')
     home_location = [float(x.strip()) for x in home_location_str.split(',')]
     devices_to_monitor_str = config.get('GENERAL', 'devices_to_monitor')
-    devices_to_monitor = devices_to_monitor_str.split(',')
+    devices_to_monitor = devices_to_monitor_str.strip().split('\n')
     monitor_devices = []
     for device_to_monitor in devices_to_monitor:
-        name_and_index = device_to_monitor.split(':')
-        monitor_devices.append(MonitorDevice(name_and_index[0], int(name_and_index[1])))
-
-    icloud = pyicloud.PyiCloudService(apple_id, apple_password)
-    if icloud.requires_2sa:
-        logger.debug("Two-step authentication required. Please run twostep.py")
-        sys.exit(1)
-
-    connected = True
-    last_icloud_request_time = time.time()
+        name_and_url = device_to_monitor.split(',')
+        monitor_devices.append(MonitorDevice(name_and_url[0], name_and_url[1]))
 
     MonitorDevice.set_logger(logger)
-    MonitorDevice.set_domoticz(domoticz_server, domoticz_authorization)
     MonitorDevice.set_monitor_devices(monitor_devices)
 
+    connected = False
+    last_icloud_request_time = 0
     sleep_time = 270
+    icloud = None
     while keep_running:
         try:
             now = time.time()
-            if not connected or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
+            if icloud is None or not connected or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
                 icloud = pyicloud.PyiCloudService(apple_id, apple_password)
                 if icloud.requires_2sa:
                     logger.error("Two-step authentication required. Please run twostep.py")
