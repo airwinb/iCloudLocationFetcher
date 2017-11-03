@@ -1,0 +1,14 @@
+Change history
+
+
+Version 0.4.0, 2017-11-03
+-------------------------
+- Change log line to correctly identify program as Locations2Domoticz
+- For testing purposes make communicating with Domoticz optional
+- Switch to requests package for Domoticz communication
+- More robust error handling when communication with Domoticz
+- Renamed project to iCloudLocationFetcher
+
+Future improvements
+-------------------
+- Use next_location_request_timestamp in MonitorDevice
