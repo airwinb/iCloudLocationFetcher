@@ -1,0 +1,12 @@
+[GENERAL]
+log_file = iCloudLocationFetcher.log
+log_level = INFO
+log_to_console = True
+apple_id = your_apple_id
+apple_password = your_apple_pwd
+
+domoticz_server =
+# domoticz_server = homeserver:8080
+
+home_location = 51.431384,5.394664
+devices_to_monitor = iPhone Bassie:123,iPhone Adriaan:124

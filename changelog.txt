@@ -12,3 +12,4 @@ Version 0.4.0, 2017-11-03
 Future improvements
 -------------------
 - Use next_location_request_timestamp in MonitorDevice
+- Make script Domoticz unaware but allow any URL to be called
