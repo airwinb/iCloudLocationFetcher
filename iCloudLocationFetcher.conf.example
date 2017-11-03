@@ -5,8 +5,9 @@ log_to_console = True
 apple_id = your_apple_id
 apple_password = your_apple_pwd
 
+# use empty for testing purposes to don't send anything
 domoticz_server =
-# domoticz_server = homeserver:8080
+# domoticz_server = localhost:8080
 
-home_location = 51.431384,5.394664
+home_location = 51.541384,5.454664
 devices_to_monitor = iPhone Bassie:123,iPhone Adriaan:124
