@@ -2,8 +2,7 @@
 log_file = iCloudLocationFetcher.log
 log_level = INFO
 log_to_console = True
-apple_id = your_apple_id
-apple_password = your_apple_pwd
+apple_creds_file = /Users/bassie/.secret/.applecreds
 home_location = 51.541384,5.454664
 devices_to_monitor =
     iPhone Bassie,http://localhost:8080/json.htm?type=command&param=udevice&idx=503&nvalue=0&svalue=__DISTANCE__
