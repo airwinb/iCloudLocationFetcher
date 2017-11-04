@@ -1,6 +1,11 @@
 Change history
 
 
+Master
+------
+- ILF-3: Store sensitive apple data in separate file
+
+
 Version 0.5.0, 2017-11-03
 -------------------------
 - Change log line to correctly identify program as Locations2Domoticz
@@ -8,8 +13,4 @@ Version 0.5.0, 2017-11-03
 - Switch to requests package for Domoticz communication
 - More robust error handling when communication with Domoticz
 - Renamed project to iCloudLocationFetcher
-- Make script Domoticz unaware but allow any URL to be called
-
-Future improvements
--------------------
-- See github
+- ILF-1: Make script Domoticz unaware but allow any URL to be called

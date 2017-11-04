@@ -1,8 +1,26 @@
+import ConfigParser
+import os
 import sys
 from pyicloud import PyiCloudService
 
-appleid = "abc"
-password = "def"
+# read configuration
+config = ConfigParser.SafeConfigParser()
+for loc in os.curdir, os.path.expanduser("~"):
+    try:
+        with open(os.path.join(loc, "iCloudLocationFetcher.conf")) as source:
+            config.readfp(source)
+    except IOError:
+        pass
+
+# read credentials
+apple_creds_file = config.get('GENERAL', 'apple_creds_file')
+try:
+    with open(apple_creds_file) as f:
+        appleid = f.readline().strip()
+        password = f.readline().strip()
+except IOError, e:
+    print("Unable to read the apple credentials file '%s': %s" % (apple_creds_file, str(e)))
+    sys.exit(1)
 
 api = PyiCloudService(appleid, password)
 if api.requires_2sa:

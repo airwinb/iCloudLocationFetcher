@@ -7,6 +7,7 @@ import os
 import pyicloud
 import requests
 import signal
+import sys
 import time
 from pyicloud.exceptions import PyiCloudAPIResponseError
 
@@ -152,8 +153,15 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     # read other configuration
-    apple_id = config.get('GENERAL', 'apple_id')
-    apple_password = config.get('GENERAL', 'apple_password')
+    apple_creds_file = config.get('GENERAL', 'apple_creds_file')
+    try:
+        with open(apple_creds_file) as f:
+            apple_id = f.readline().strip()
+            apple_password = f.readline().strip()
+    except IOError, e:
+        logger.error("Unable to read the apple credentials file '%s': %s" % (apple_creds_file, str(e)))
+        sys.exit(1)
+
     home_location_str = config.get('GENERAL', 'home_location')
     home_location = [float(x.strip()) for x in home_location_str.split(',')]
     devices_to_monitor_str = config.get('GENERAL', 'devices_to_monitor')
