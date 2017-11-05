@@ -14,15 +14,19 @@ from pyicloud.exceptions import PyiCloudAPIResponseError
 NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ = 3600
 ICLOUD_SESSION_TIMEOUT = 280  # in seconds; 300 seconds is too long
 DEFAULT_RETRIEVE_INTERVAL = ICLOUD_SESSION_TIMEOUT - 10
-OUTDATED_LIMIT = 250  # if icloud location timestamp is older than this, then retry
+OUTDATED_LIMIT = 60  # if icloud location timestamp is older than this, then retry
 OUTDATED_LOCATION_RETRY_INTERVAL = 20
-
+MAX_RETRIEVE_RETRIES = 3  # if after this many retries the location is still old, then revert to DEFAULT_RETRIEVE_INTERVAL
 MIN_RETRIEVE_INTERVAL = 10
 MAX_RETRIEVE_INTERVAL = 3600
 
+MIN_SLEEP_TIME = 1
+MAX_SLEEP_TIME = 3600
+ICLOUD_CONNECTION_ERROR_SLEEP_TIME = 1800
+
 # Constants (Do not change)
 SCRIPT_VERSION = "0.6.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-03"
+SCRIPT_DATE = "2017-11-05"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -33,36 +37,33 @@ logger = None
 class MonitorDevice(object):
     __metaclass__ = abc.ABCMeta
     logger = None
-    monitor_devices = []
 
     def __init__(self, name, update_url):
         self.name = name
         self.update_url = update_url
+        self.update_url_timestamp = 0
         self.distance = -1.0
         self.location_timestamp = 0
         self.next_retrieve_timestamp = time.time()
+        self.retrieve_retry_count = 0
 
     @classmethod
     def set_logger(cls, logger):
         cls.logger = logger
 
-    @classmethod
-    def set_monitor_devices(cls, devices):
-        cls.monitor_devices = devices
-
     def update(self, distance, icloud_location_timestamp):
         previous_distance = self.distance
-        previous_location_timestamp = self.location_timestamp
+        self.location_timestamp = icloud_location_timestamp
+        now = time.time()
         # send update if
         # 1. real significant change
         # 2. if we haven't send an update for a long time
         if (distance != previous_distance and not (abs(distance - previous_distance == 0.1) and (distance >= 5.0))) \
-                or icloud_location_timestamp - previous_location_timestamp > NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ:
+                or now - self.update_url_timestamp > NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ:
             self.distance = distance
-            self.location_timestamp = icloud_location_timestamp
             self.send_to_update_url()
 
-        self.set_next_retrieve_timestamp(previous_distance, previous_location_timestamp)
+        self.set_next_retrieve_timestamp(previous_distance)
 
     def send_to_update_url(self):
         url = self.update_url.replace(URL_DISTANCE_PARAM, str(self.distance))
@@ -72,6 +73,7 @@ class MonitorDevice(object):
             self.logger.info("Update '%s' with '%s'" % (self.name, url))
             try:
                 result = requests.get(url)
+                self.update_url_timestamp = time.time()
                 self.logger.debug("%s -> %s" % (url, result))
             except requests.ConnectionError, e:
                 self.logger.error('Request failed %s - %s' % (url, e))
@@ -79,17 +81,22 @@ class MonitorDevice(object):
     def get_next_retrieve_timestamp(self):
         return self.next_retrieve_timestamp
 
-    def set_next_retrieve_timestamp(self, previous_distance, previous_location_timestamp):
-        # retry shortly if the new value is quite old
-        if self.location_timestamp - previous_location_timestamp > OUTDATED_LIMIT:
-            self.next_retrieve_timestamp = time.time() + OUTDATED_LOCATION_RETRY_INTERVAL
-            return
-
-        if self.distance == 0.0 or previous_distance == self.distance:
-            seconds_to_next_retrieve = DEFAULT_RETRIEVE_INTERVAL
-        else:
-            seconds_to_next_retrieve = max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
-        self.next_retrieve_timestamp = time.time() + seconds_to_next_retrieve
+    def set_next_retrieve_timestamp(self, previous_distance):
+        now = time.time()
+        # received old location
+        if now - self.location_timestamp > OUTDATED_LIMIT:
+            if self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:
+                self.next_retrieve_timestamp = now + OUTDATED_LOCATION_RETRY_INTERVAL
+                self.retrieve_retry_count += 1
+            else:
+                self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
+                self.retrieve_retry_count = 0
+        else:  # location is up to date
+            self.retrieve_retry_count = 0
+            if self.distance == 0.0 or previous_distance == self.distance:
+                self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
+            else:
+                self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
 
 
 def distance_meters(origin, destination):
@@ -192,26 +199,25 @@ def main():
         monitor_devices.append(MonitorDevice(name_and_url[0], name_and_url[1]))
 
     MonitorDevice.set_logger(logger)
-    MonitorDevice.set_monitor_devices(monitor_devices)
 
-    connected = False
     last_icloud_request_time = 0
-    sleep_time = 10
+    sleep_time = MIN_SLEEP_TIME
     icloud = None
     while keep_running:
         try:
             now = time.time()
-            if icloud is None or not connected or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
+            if icloud is None or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
                 icloud = pyicloud.PyiCloudService(apple_id, apple_password)
                 if icloud.requires_2sa:
                     logger.error("Two-step authentication required. Please run twostep.py")
-                    sleep_time = 900
+                    sleep_time = ICLOUD_CONNECTION_ERROR_SLEEP_TIME
+                    icloud = None
                 else:
-                    connected = True
                     sleep_time = 5
                     last_icloud_request_time = time.time()
 
-            if connected:
+            if icloud is not None:
+                next_sleep_time = MAX_SLEEP_TIME
                 for monitor_device in monitor_devices:
                     if monitor_device.get_next_retrieve_timestamp() < now:
                         logger.debug("Getting update for %s" % monitor_device.name)
@@ -230,17 +236,23 @@ def main():
                                     now = time.time()
                                     location_seconds_ago = int(now - location_timestamp)
                                     next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
+                                    next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
                                     logger.info("Device '%s' was %d seconds ago at %d meter, or rounded at %.1f km. Next update in %d seconds" % (monitor_device.name, location_seconds_ago, distance, rounded_distance_km, next_update))
                     else:
-                        logger.debug("Skipping update for %s" % monitor_device.name)
+                        next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
+                        logger.info("Skipping update for %s. Next update in %d seconds" % (monitor_device.name, next_update))
+                        next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
+                    sleep_time = next_sleep_time
 
-        except (requests.exceptions.ConnectionError, PyiCloudAPIResponseError) as e:
+        except (requests.exceptions.ConnectionError, PyiCloudAPIResponseError):
             # logger.warn("Exception: {0}".format(str(e)))
             now = time.time()
             logger.warn("Now - last_icloud_request_time: %d" % str(now - last_icloud_request_time))
             logger.exception("Connection error or PyiCloud exception")
-            connected = False
+            icloud = None
+            sleep_time = ICLOUD_CONNECTION_ERROR_SLEEP_TIME
 
+        logger.debug("Sleeping for %d seconds" % sleep_time)
         time.sleep(sleep_time)
 
 

@@ -3,6 +3,9 @@ Change history
 
 Master
 ------
+- ILF-8: Use adjustable sleep time based on devices next update request time
+- ILF-7: Improve retry mechanism for outdated location fetching
+- ILF-4: Use distance based update interval
 - ILF-3: Store sensitive apple data in separate file
 
 

@@ -2,8 +2,14 @@
 log_file = iCloudLocationFetcher.log
 log_level = INFO
 log_to_console = True
+
+# credits file, with apple id on first line, and password on second line
 apple_creds_file = /Users/bassie/.secret/.applecreds
+
+# home_location = lattitude,longitude
 home_location = 51.541384,5.454664
+
+# multiple devices possible, each on one line
 devices_to_monitor =
     iPhone Bassie,http://localhost:8080/json.htm?type=command&param=udevice&idx=503&nvalue=0&svalue=__DISTANCE__
     iPhone Adriaan,http://localhost:8080/json.htm?type=command&param=udevice&idx=504&nvalue=0&svalue=__DISTANCE__
