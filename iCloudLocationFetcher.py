@@ -15,7 +15,7 @@ NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ = 3600
 ICLOUD_SESSION_TIMEOUT = 280  # in seconds; 300 seconds is too long
 DEFAULT_RETRIEVE_INTERVAL = ICLOUD_SESSION_TIMEOUT - 10
 OUTDATED_LIMIT = 60  # if icloud location timestamp is older than this, then retry
-OUTDATED_LOCATION_RETRY_INTERVAL = 20
+OUTDATED_LOCATION_RETRY_INTERVAL = 15
 MAX_RETRIEVE_RETRIES = 3  # if after this many retries the location is still old, then revert to DEFAULT_RETRIEVE_INTERVAL
 MIN_RETRIEVE_INTERVAL = 10
 MAX_RETRIEVE_INTERVAL = 3600
@@ -26,7 +26,7 @@ ICLOUD_CONNECTION_ERROR_SLEEP_TIME = 1800
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.6.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-05"
+SCRIPT_DATE = "2017-11-06"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -91,12 +91,20 @@ class MonitorDevice(object):
             else:
                 self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
                 self.retrieve_retry_count = 0
-        else:  # location is up to date
-            self.retrieve_retry_count = 0
-            if self.distance == 0.0 or previous_distance == self.distance:
+        else:  # location is recent
+            if self.distance == 0.0:
                 self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
+                self.retrieve_retry_count = 0
+            elif previous_distance == self.distance:
+                if self.distance < 0.4 and self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:  # special case, due to rounding the values can remain the same when close to home
+                    self.next_retrieve_timestamp = now + MIN_RETRIEVE_INTERVAL
+                    self.retrieve_retry_count += 1
+                else:
+                    self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
+                    self.retrieve_retry_count = 0
             else:
                 self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
+                self.retrieve_retry_count = 0
 
 
 def distance_meters(origin, destination):
