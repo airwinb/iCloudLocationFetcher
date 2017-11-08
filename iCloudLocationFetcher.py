@@ -168,12 +168,19 @@ def main():
 
     # read configuration
     config = ConfigParser.SafeConfigParser()
-    for loc in os.curdir, os.path.expanduser("~"):
+    config_exists = False
+    for loc in os.curdir, os.path.expanduser("~"), os.path.join(os.path.expanduser("~"), "iCloudLocationFetcher"):
         try:
             with open(os.path.join(loc, "iCloudLocationFetcher.conf")) as source:
                 config.readfp(source)
+                config_exists = True
         except IOError:
             pass
+
+    if not config_exists:
+        print("Error: Unable to find the 'iCloudLocationFetcher.conf' file. \n"
+              "Put it in the current directory, in ~ or in ~/iCloudLocationFetcher.\n")
+        sys.exit(1)
 
     logger = init_logging(config)
 

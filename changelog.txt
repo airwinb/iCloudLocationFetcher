@@ -3,7 +3,8 @@ Change history
 
 Master
 ------
-- No changes yet
+- ILF-14: Extend the directories to search for the conf file to include the iCloudLocationFetcher directory
+- ILF-13: Running via init.d script requires shebang
 
 
 Version 0.6.0, 2017-11-06
