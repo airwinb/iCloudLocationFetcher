@@ -3,6 +3,7 @@ Change history
 
 Master
 ------
+- ILF-15: Improve home detection when old locations are received
 - ILF-14: Extend the directories to search for the conf file to include the iCloudLocationFetcher directory
 - ILF-13: Running via init.d script requires shebang
 

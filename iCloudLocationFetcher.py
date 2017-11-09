@@ -25,6 +25,7 @@ MAX_RETRIEVE_INTERVAL = 3600
 MIN_SLEEP_TIME = 1
 MAX_SLEEP_TIME = 3600
 ICLOUD_CONNECTION_ERROR_SLEEP_TIME = 1800
+DEVICE_ERROR_SLEEP_TIME = 1800
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.7.0-SNAPSHOT"
@@ -65,7 +66,7 @@ class MonitorDevice(object):
             self.distance = distance
             self.send_to_update_url()
 
-        self.set_next_retrieve_timestamp(previous_distance)
+        self.set_next_retrieve_timestamp()
 
     def send_to_update_url(self):
         url = self.update_url.replace(URL_DISTANCE_PARAM, str(self.distance))
@@ -83,28 +84,24 @@ class MonitorDevice(object):
     def get_next_retrieve_timestamp(self):
         return self.next_retrieve_timestamp
 
-    def set_next_retrieve_timestamp(self, previous_distance):
+    def set_next_retrieve_timestamp(self):
         now = time.time()
-        # received old location
-        if now - self.location_timestamp > OUTDATED_LIMIT:
-            if self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:
-                self.next_retrieve_timestamp = now + OUTDATED_LOCATION_RETRY_INTERVAL
-                self.retrieve_retry_count += 1
-            else:
-                self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
-                self.retrieve_retry_count = 0
-        else:  # location is recent
-            if self.distance == 0.0:
-                self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
-                self.retrieve_retry_count = 0
-            elif previous_distance == self.distance:
-                if self.distance < 0.4 and self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:  # special case, due to rounding the values can remain the same when close to home
-                    self.next_retrieve_timestamp = now + MIN_RETRIEVE_INTERVAL
+
+        # if at home then use default value
+        if self.distance == 0.0:
+            self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
+            self.retrieve_retry_count = 0
+        else:  # not at home
+            # received old location
+            if now - self.location_timestamp > OUTDATED_LIMIT:
+                # can still retry to get up-to-date reading
+                if self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:
+                    self.next_retrieve_timestamp = now + OUTDATED_LOCATION_RETRY_INTERVAL
                     self.retrieve_retry_count += 1
-                else:
-                    self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
+                else:  # use distance based interval in range [default, max]
+                    self.next_retrieve_timestamp = now + max(DEFAULT_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
                     self.retrieve_retry_count = 0
-            else:
+            else:  # location is recent, so use distance based interval in range [min, max]
                 self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
                 self.retrieve_retry_count = 0
 
@@ -255,9 +252,16 @@ def main():
                                     next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
                                     next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
                                     logger.info("Device '%s' was %d seconds ago at %d meter, or rounded at %.1f km. Next update in %d seconds" % (monitor_device.name, location_seconds_ago, distance, rounded_distance_km, next_update))
+                            else:
+                                next_sleep_time = min(next_sleep_time, DEVICE_ERROR_SLEEP_TIME)
+                                logger.warn("Location disabled for '%s'. Next update in %d seconds" % (monitor_device.name, DEVICE_ERROR_SLEEP_TIME))
+                        else:
+                            next_sleep_time = min(next_sleep_time, DEVICE_ERROR_SLEEP_TIME)
+                            logger.warn("Device '%s' not found. Next update in %d seconds" % (monitor_device.name, DEVICE_ERROR_SLEEP_TIME))
+
                     else:
                         next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
-                        logger.info("Skipping update for %s. Next update in %d seconds" % (monitor_device.name, next_update))
+                        logger.info("Update not needed yet for '%s'. Next update in %d seconds" % (monitor_device.name, next_update))
                         next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
                     sleep_time = next_sleep_time
 
