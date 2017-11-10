@@ -29,7 +29,7 @@ DEVICE_ERROR_SLEEP_TIME = 1800
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.7.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-06"
+SCRIPT_DATE = "2017-11-10"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -221,7 +221,7 @@ def main():
         try:
             now = time.time()
             if icloud is None or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
-                icloud = pyicloud.PyiCloudService(apple_id, apple_password)
+                icloud = pyicloud.PyiCloudService(apple_id, apple_password, "~/.iCloudLocationFetcher")
                 if icloud.requires_2sa:
                     logger.error("Two-step authentication required. Please run twostep.py")
                     sleep_time = ICLOUD_CONNECTION_ERROR_SLEEP_TIME

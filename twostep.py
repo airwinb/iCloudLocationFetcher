@@ -22,7 +22,7 @@ except IOError, e:
     print("Unable to read the apple credentials file '%s': %s" % (apple_creds_file, str(e)))
     sys.exit(1)
 
-api = PyiCloudService(appleid, password)
+api = PyiCloudService(appleid, password, "~/.iCloudLocationFetcher")
 if api.requires_2sa:
     import click
     print("Two-step authentication required. Your trusted devices are:")
