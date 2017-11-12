@@ -9,6 +9,9 @@ apple_creds_file = /Users/bassie/.secret/.applecreds
 # home_location = lattitude,longitude
 home_location = 51.541384,5.454664
 
+# only request updates once an hour when at home between the specified times
+low_updates_when_home=22:30-07:00
+
 # multiple devices possible, each on one line
 devices_to_monitor =
     iPhone Bassie,http://localhost:8080/json.htm?type=command&param=udevice&idx=503&nvalue=0&svalue=__DISTANCE__

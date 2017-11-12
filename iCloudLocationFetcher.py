@@ -2,6 +2,7 @@
 
 import abc
 import ConfigParser
+import datetime
 import logging
 import math
 import os
@@ -14,8 +15,7 @@ from pyicloud.exceptions import PyiCloudAPIResponseError
 
 # Configuration
 NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ = 3600
-ICLOUD_SESSION_TIMEOUT = 280  # in seconds; 300 seconds is too long
-DEFAULT_RETRIEVE_INTERVAL = ICLOUD_SESSION_TIMEOUT - 10
+DEFAULT_RETRIEVE_INTERVAL = 270
 OUTDATED_LIMIT = 60  # if icloud location timestamp is older than this, then retry
 OUTDATED_LOCATION_RETRY_INTERVAL = 15
 MAX_RETRIEVE_RETRIES = 3  # if after this many retries the location is still old, then revert to DEFAULT_RETRIEVE_INTERVAL
@@ -29,7 +29,7 @@ DEVICE_ERROR_SLEEP_TIME = 1800
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.7.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-11"
+SCRIPT_DATE = "2017-11-12"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -50,6 +50,7 @@ class MonitorDevice(object):
         self.next_retrieve_timestamp = time.time()
         self.retrieve_retry_count = 0
         self.apple_device = None
+        self.low_update_when_home_timespan = None
 
     @classmethod
     def set_logger(cls, value):
@@ -60,6 +61,9 @@ class MonitorDevice(object):
 
     def set_apple_device(self, value):
         self.apple_device = value
+
+    def set_low_update_when_home_timespan(self, value):
+        self.low_update_when_home_timespan = value
 
     def update(self, distance, icloud_location_timestamp):
         previous_distance = self.distance
@@ -105,13 +109,29 @@ class MonitorDevice(object):
                                                          min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
                 self.retrieve_retry_count = 0
         else:  # location is recent
-            # if at home then use default value
+            self.retrieve_retry_count = 0
+            # if at home
             if self.distance == 0.0:
-                self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
-                self.retrieve_retry_count = 0
+                self.next_retrieve_timestamp = now + self.calculate_seconds_to_sleep_when_home()
             else:  # not at home, so use distance based interval in range [min, max]
                 self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
-                self.retrieve_retry_count = 0
+
+    def calculate_seconds_to_sleep_when_home(self):
+        if self.low_update_when_home_timespan is None:
+            return DEFAULT_RETRIEVE_INTERVAL
+        else:
+            # use next interval based on low_update_when_home_timespan
+            now_dt = datetime.datetime.now()
+            minutes_since_midnight = math.floor((now_dt - now_dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() / 60)
+            if self.low_update_when_home_timespan[0] < self.low_update_when_home_timespan[1] \
+                        and minutes_since_midnight > self.low_update_when_home_timespan[0] \
+                        and minutes_since_midnight < self.low_update_when_home_timespan[1]:
+                return min((self.low_update_when_home_timespan[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL)
+
+            if self.low_update_when_home_timespan[0] > self.low_update_when_home_timespan[1] \
+                        and (minutes_since_midnight > self.low_update_when_home_timespan[0] \
+                            or minutes_since_midnight < self.low_update_when_home_timespan[1]):
+                return min(((24 * 60) - minutes_since_midnight + self.low_update_when_home_timespan[1]) * 60, MAX_RETRIEVE_INTERVAL)
 
 
 def distance_meters(origin, destination):
@@ -172,7 +192,7 @@ def main():
     global keep_running, logger
 
     # read configuration
-    config = ConfigParser.SafeConfigParser()
+    config = ConfigParser.SafeConfigParser({'low_updates_when_home': None})
     config_exists = False
     for loc in os.curdir, os.path.expanduser("~"), os.path.join(os.path.expanduser("~"), "iCloudLocationFetcher"):
         try:
@@ -213,22 +233,44 @@ def main():
 
     home_location_str = config.get('GENERAL', 'home_location')
     home_location = [float(x.strip()) for x in home_location_str.split(',')]
+
+    low_updates_when_home_timespan = None
+    low_updates_when_home_str = config.get('GENERAL', 'low_updates_when_home')
+    if low_updates_when_home_str is not None:
+        low_updates_when_home_start_minutes = None
+        low_updates_when_home_end_minutes = None
+        low_updates_when_home_list = [x.strip() for x in low_updates_when_home_str.split('-')]
+        if len(low_updates_when_home_list) == 2:
+            hours_min_start_list = [int(x.strip()) for x in low_updates_when_home_list[0].split(':')]
+            if len(hours_min_start_list) == 2:
+                low_updates_when_home_start_minutes = 60 * hours_min_start_list[0] + hours_min_start_list[1]
+            hours_min_end_list = [int(x.strip()) for x in low_updates_when_home_list[1].split(':')]
+            if len(hours_min_end_list) == 2:
+                low_updates_when_home_end_minutes = 60 * hours_min_end_list[0] + hours_min_end_list[1]
+
+        if low_updates_when_home_start_minutes is None or low_updates_when_home_end_minutes is None:
+            logger.warn("Invalid format of 'low_updates_when_home' parameter in config. Found '%s', but format should be '23:30-07:00'" % low_updates_when_home_str)
+        else:
+            logger.info("Low updates starting from %s (%d minutes) to %s (%d minutes)" % (low_updates_when_home_list[0], low_updates_when_home_start_minutes, low_updates_when_home_list[1], low_updates_when_home_end_minutes))
+            low_updates_when_home_timespan = [low_updates_when_home_start_minutes, low_updates_when_home_end_minutes]
+
     devices_to_monitor_str = config.get('GENERAL', 'devices_to_monitor')
     devices_to_monitor = devices_to_monitor_str.strip().split('\n')
     monitor_devices = []
     for device_to_monitor in devices_to_monitor:
         name_and_url = device_to_monitor.split(',')
-        monitor_devices.append(MonitorDevice(name_and_url[0], name_and_url[1]))
+        monitor_device = MonitorDevice(name_and_url[0], name_and_url[1])
+        monitor_device.set_low_update_when_home_timespan(low_updates_when_home_timespan)
+        monitor_devices.append(monitor_device)
 
     MonitorDevice.set_logger(logger)
 
-    last_icloud_request_time = 0
     sleep_time = MIN_SLEEP_TIME
     icloud = None
     while keep_running:
         try:
             now = time.time()
-            if icloud is None:  # or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
+            if icloud is None:
                 icloud = pyicloud.PyiCloudService(apple_id, apple_password, "~/.iCloudLocationFetcher")
                 if icloud.requires_2sa:
                     logger.error("Two-step authentication required. Please run twostep.py")
@@ -236,7 +278,6 @@ def main():
                     icloud = None
                 else:
                     sleep_time = MIN_SLEEP_TIME
-                    last_icloud_request_time = time.time()
                     icloud_devices = icloud.devices
                     # set corresponding devices
                     for monitor_device in monitor_devices:
@@ -257,7 +298,6 @@ def main():
                         if apple_device is not None:
                             if apple_device.content['locationEnabled']:
                                 location = apple_device.location()
-                                last_icloud_request_time = time.time()
                                 if location is not None:
                                     logger.debug(location)
                                     location_timestamp = location['timeStamp'] / 1000
@@ -285,8 +325,6 @@ def main():
 
         except (requests.exceptions.ConnectionError, PyiCloudAPIResponseError):
             # logger.warn("Exception: {0}".format(str(e)))
-            now = time.time()
-            logger.warn("Now - last_icloud_request_time: %d" % str(now - last_icloud_request_time))
             logger.exception("Connection error or PyiCloud exception")
             icloud = None
             sleep_time = ICLOUD_CONNECTION_ERROR_SLEEP_TIME
