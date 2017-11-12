@@ -3,6 +3,10 @@ Change history
 
 Master
 ------
+
+
+Version 0.7.0, 2017-11-12
+-------------------------
 - ILF-25: Improve communication with server to update
 - ILF-19: Use less frequent update interval when home at night 
 - ILF-21: iCloudLocationFetcher hangs resetting connections after a while
