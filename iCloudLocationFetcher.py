@@ -56,6 +56,10 @@ class MonitorDevice(object):
     def set_logger(cls, value):
         cls.logger = value
 
+    @classmethod
+    def set_send_to_server(cls, value):
+        cls.send_to_server = value
+
     def get_apple_device(self):
         return self.apple_device
 
@@ -75,22 +79,26 @@ class MonitorDevice(object):
         if (distance != previous_distance and not (abs(distance - previous_distance == 0.1) and (distance >= 5.0))) \
                 or now - self.update_url_timestamp > NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ:
             self.distance = distance
-            self.send_to_update_url()
+            self.send_to_update_url(previous_distance)
 
         self.set_next_retrieve_timestamp()
 
-    def send_to_update_url(self):
+    def send_to_update_url(self, previous_distance):
         url = self.update_url.replace(URL_DISTANCE_PARAM, str(self.distance))
-        if self.update_url == '':
-            self.logger.info("Skipping sending update for '%s' to '%s'" % (self.name, url))
-        else:
-            self.logger.info("Update '%s' with '%s'" % (self.name, url))
+        if self.send_to_server:
+            self.logger.debug("About to update '%s' with '%s'" % (self.name, url))
             try:
-                result = requests.get(url)
+                response = requests.get(url)
                 self.update_url_timestamp = time.time()
-                self.logger.debug("%s -> %s" % (url, result))
+                self.logger.debug("%s -> %s" % (url, response))
+                if response.ok:
+                    self.logger.info("Successfully updated distance of '%s' from %.1f to %.1f km" % (self.name, previous_distance, self.distance))
+                else:
+                    self.logger.warn("Unable to update distance of '%s' using '%s'. Response: %s" % (self.name, url, response))
             except requests.ConnectionError, e:
                 self.logger.error('Request failed %s - %s' % (url, e))
+        else:
+            self.logger.info("Skipping sending update for '%s' to '%s'" % (self.name, url))
 
     def get_next_retrieve_timestamp(self):
         return self.next_retrieve_timestamp
@@ -117,9 +125,7 @@ class MonitorDevice(object):
                 self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
 
     def calculate_seconds_to_sleep_when_home(self):
-        if self.low_update_when_home_timespan is None:
-            return DEFAULT_RETRIEVE_INTERVAL
-        else:
+        if self.low_update_when_home_timespan is not None:
             # use next interval based on low_update_when_home_timespan
             now_dt = datetime.datetime.now()
             minutes_since_midnight = math.floor((now_dt - now_dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() / 60)
@@ -132,6 +138,8 @@ class MonitorDevice(object):
                         and (minutes_since_midnight > self.low_update_when_home_timespan[0] \
                             or minutes_since_midnight < self.low_update_when_home_timespan[1]):
                 return min(((24 * 60) - minutes_since_midnight + self.low_update_when_home_timespan[1]) * 60, MAX_RETRIEVE_INTERVAL)
+
+        return DEFAULT_RETRIEVE_INTERVAL
 
 
 def distance_meters(origin, destination):
@@ -192,7 +200,7 @@ def main():
     global keep_running, logger
 
     # read configuration
-    config = ConfigParser.SafeConfigParser({'low_updates_when_home': None})
+    config = ConfigParser.SafeConfigParser({'low_updates_when_home': None, 'send_to_server': "true"})
     config_exists = False
     for loc in os.curdir, os.path.expanduser("~"), os.path.join(os.path.expanduser("~"), "iCloudLocationFetcher"):
         try:
@@ -254,6 +262,7 @@ def main():
             logger.info("Low updates starting from %s (%d minutes) to %s (%d minutes)" % (low_updates_when_home_list[0], low_updates_when_home_start_minutes, low_updates_when_home_list[1], low_updates_when_home_end_minutes))
             low_updates_when_home_timespan = [low_updates_when_home_start_minutes, low_updates_when_home_end_minutes]
 
+    send_to_server = config.getboolean('GENERAL', 'send_to_server')
     devices_to_monitor_str = config.get('GENERAL', 'devices_to_monitor')
     devices_to_monitor = devices_to_monitor_str.strip().split('\n')
     monitor_devices = []
@@ -264,6 +273,7 @@ def main():
         monitor_devices.append(monitor_device)
 
     MonitorDevice.set_logger(logger)
+    MonitorDevice.set_send_to_server(send_to_server)
 
     sleep_time = MIN_SLEEP_TIME
     icloud = None
