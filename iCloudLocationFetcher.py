@@ -29,7 +29,7 @@ DEVICE_ERROR_SLEEP_TIME = 1800
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.7.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-10"
+SCRIPT_DATE = "2017-11-11"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -49,10 +49,17 @@ class MonitorDevice(object):
         self.location_timestamp = 0
         self.next_retrieve_timestamp = time.time()
         self.retrieve_retry_count = 0
+        self.apple_device = None
 
     @classmethod
-    def set_logger(cls, logger):
-        cls.logger = logger
+    def set_logger(cls, value):
+        cls.logger = value
+
+    def get_apple_device(self):
+        return self.apple_device
+
+    def set_apple_device(self, value):
+        self.apple_device = value
 
     def update(self, distance, icloud_location_timestamp):
         previous_distance = self.distance
@@ -87,21 +94,22 @@ class MonitorDevice(object):
     def set_next_retrieve_timestamp(self):
         now = time.time()
 
-        # if at home then use default value
-        if self.distance == 0.0:
-            self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
-            self.retrieve_retry_count = 0
-        else:  # not at home
-            # received old location
-            if now - self.location_timestamp > OUTDATED_LIMIT:
-                # can still retry to get up-to-date reading
-                if self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:
-                    self.next_retrieve_timestamp = now + OUTDATED_LOCATION_RETRY_INTERVAL
-                    self.retrieve_retry_count += 1
-                else:  # use distance based interval in range [default, max]
-                    self.next_retrieve_timestamp = now + max(DEFAULT_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
-                    self.retrieve_retry_count = 0
-            else:  # location is recent, so use distance based interval in range [min, max]
+        # received old location
+        if now - self.location_timestamp > OUTDATED_LIMIT:
+            # can still retry to get up-to-date reading
+            if self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:
+                self.next_retrieve_timestamp = now + OUTDATED_LOCATION_RETRY_INTERVAL
+                self.retrieve_retry_count += 1
+            else:  # use distance based interval in range [default, max]
+                self.next_retrieve_timestamp = now + max(DEFAULT_RETRIEVE_INTERVAL,
+                                                         min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
+                self.retrieve_retry_count = 0
+        else:  # location is recent
+            # if at home then use default value
+            if self.distance == 0.0:
+                self.next_retrieve_timestamp = now + DEFAULT_RETRIEVE_INTERVAL
+                self.retrieve_retry_count = 0
+            else:  # not at home, so use distance based interval in range [min, max]
                 self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
                 self.retrieve_retry_count = 0
 
@@ -220,22 +228,32 @@ def main():
     while keep_running:
         try:
             now = time.time()
-            if icloud is None or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
+            if icloud is None:  # or now - last_icloud_request_time > ICLOUD_SESSION_TIMEOUT:
                 icloud = pyicloud.PyiCloudService(apple_id, apple_password, "~/.iCloudLocationFetcher")
                 if icloud.requires_2sa:
                     logger.error("Two-step authentication required. Please run twostep.py")
                     sleep_time = ICLOUD_CONNECTION_ERROR_SLEEP_TIME
                     icloud = None
                 else:
-                    sleep_time = 5
+                    sleep_time = MIN_SLEEP_TIME
                     last_icloud_request_time = time.time()
+                    icloud_devices = icloud.devices
+                    # set corresponding devices
+                    for monitor_device in monitor_devices:
+                        logger.info("Searching for '%s' in iCloud devices" % monitor_device.name)
+                        apple_device = get_apple_device(icloud_devices, monitor_device.name)
+                        if apple_device is not None:
+                            monitor_device.set_apple_device(apple_device)
+                            logger.info("Found iCloud device '%s'" % str(apple_device))
+                        else:
+                            logger.warn("No iCloud device found with name '%s'" % monitor_device.name)
 
             if icloud is not None:
                 next_sleep_time = MAX_SLEEP_TIME
                 for monitor_device in monitor_devices:
                     if monitor_device.get_next_retrieve_timestamp() < now:
                         logger.debug("Getting update for %s" % monitor_device.name)
-                        apple_device = get_apple_device(icloud.devices, monitor_device.name)
+                        apple_device = monitor_device.get_apple_device()
                         if apple_device is not None:
                             if apple_device.content['locationEnabled']:
                                 location = apple_device.location()
@@ -261,7 +279,7 @@ def main():
 
                     else:
                         next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
-                        logger.info("Update not needed yet for '%s'. Next update in %d seconds" % (monitor_device.name, next_update))
+                        logger.debug("Update not needed yet for '%s'. Next update in %d seconds" % (monitor_device.name, next_update))
                         next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
                     sleep_time = next_sleep_time
 
