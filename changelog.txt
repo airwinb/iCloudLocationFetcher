@@ -3,7 +3,7 @@ Change history
 
 Master
 ------
-- ILF-19: 
+- ILF-19: Use less frequent update interval when home at night 
 - ILF-21: iCloudLocationFetcher hangs resetting connections after a while
 - ILF-20: Use cookie_directory to store the cookie in non-volotile memory
 - ILF-15: Improve home detection when old locations are received
