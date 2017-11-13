@@ -3,7 +3,7 @@ Change history
 
 Master
 ------
-
+- ILF-27: Improve handling of PyiCloudAPIResponseError and reduce sleep interval
 
 Version 0.7.0, 2017-11-12
 -------------------------

@@ -24,12 +24,12 @@ MAX_RETRIEVE_INTERVAL = 3600
 
 MIN_SLEEP_TIME = 1
 MAX_SLEEP_TIME = 3600
-ICLOUD_CONNECTION_ERROR_SLEEP_TIME = 1800
-DEVICE_ERROR_SLEEP_TIME = 1800
+RECOVERABLE_ERROR_SLEEP_TIME = 300
+ACTION_NEEDED_ERROR_SLEEP_TIME = 3600
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.8.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-12"
+SCRIPT_DATE = "2017-11-13"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -130,12 +130,11 @@ class MonitorDevice(object):
             now_dt = datetime.datetime.now()
             minutes_since_midnight = math.floor((now_dt - now_dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() / 60)
             if self.low_update_when_home_timespan[0] < self.low_update_when_home_timespan[1] \
-                        and minutes_since_midnight > self.low_update_when_home_timespan[0] \
-                        and minutes_since_midnight < self.low_update_when_home_timespan[1]:
+                        and self.low_update_when_home_timespan[0] <  minutes_since_midnight < self.low_update_when_home_timespan[1]:
                 return min((self.low_update_when_home_timespan[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL)
 
             if self.low_update_when_home_timespan[0] > self.low_update_when_home_timespan[1] \
-                        and (minutes_since_midnight > self.low_update_when_home_timespan[0] \
+                        and (minutes_since_midnight > self.low_update_when_home_timespan[0]
                             or minutes_since_midnight < self.low_update_when_home_timespan[1]):
                 return min(((24 * 60) - minutes_since_midnight + self.low_update_when_home_timespan[1]) * 60, MAX_RETRIEVE_INTERVAL)
 
@@ -284,7 +283,7 @@ def main():
                 icloud = pyicloud.PyiCloudService(apple_id, apple_password, "~/.iCloudLocationFetcher")
                 if icloud.requires_2sa:
                     logger.error("Two-step authentication required. Please run twostep.py")
-                    sleep_time = ICLOUD_CONNECTION_ERROR_SLEEP_TIME
+                    sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
                     icloud = None
                 else:
                     sleep_time = MIN_SLEEP_TIME
@@ -321,11 +320,11 @@ def main():
                                     next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
                                     logger.info("Device '%s' was %d seconds ago at %d meter, or rounded at %.1f km. Next update in %d seconds" % (monitor_device.name, location_seconds_ago, distance, rounded_distance_km, next_update))
                             else:
-                                next_sleep_time = min(next_sleep_time, DEVICE_ERROR_SLEEP_TIME)
-                                logger.warn("Location disabled for '%s'. Next update in %d seconds" % (monitor_device.name, DEVICE_ERROR_SLEEP_TIME))
+                                next_sleep_time = min(next_sleep_time, ACTION_NEEDED_ERROR_SLEEP_TIME)
+                                logger.warn("Location disabled for '%s'. Next update in %d seconds" % (monitor_device.name, ACTION_NEEDED_ERROR_SLEEP_TIME))
                         else:
-                            next_sleep_time = min(next_sleep_time, DEVICE_ERROR_SLEEP_TIME)
-                            logger.warn("Device '%s' not found. Next update in %d seconds" % (monitor_device.name, DEVICE_ERROR_SLEEP_TIME))
+                            next_sleep_time = min(next_sleep_time, ACTION_NEEDED_ERROR_SLEEP_TIME)
+                            logger.warn("Device '%s' not found. Next update in %d seconds" % (monitor_device.name, ACTION_NEEDED_ERROR_SLEEP_TIME))
 
                     else:
                         next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
@@ -333,11 +332,18 @@ def main():
                         next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
                     sleep_time = next_sleep_time
 
-        except (requests.exceptions.ConnectionError, PyiCloudAPIResponseError):
-            # logger.warn("Exception: {0}".format(str(e)))
-            logger.exception("Connection error or PyiCloud exception")
+        except PyiCloudAPIResponseError as e:
+            logger.warn("PyiCloudAPIResponseError: {0}. Sleeping for {1} seconds".format(str(e), str()))
             icloud = None
-            sleep_time = ICLOUD_CONNECTION_ERROR_SLEEP_TIME
+            sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
+        except requests.exceptions.ConnectionError as e:
+            logger.exception("ConnectionError: {0}. Sleeping for {1} seconds".format(str(e), str(RECOVERABLE_ERROR_SLEEP_TIME)))
+            icloud = None
+            sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
+        except:
+            logger.exception("Unexpected exception. Sleeping for {0} seconds".format(RECOVERABLE_ERROR_SLEEP_TIME))
+            icloud = None
+            sleep_time = ACTION_NEEDED_ERROR_SLEEP_TIME
 
         logger.debug("Sleeping for %d seconds" % sleep_time)
         time.sleep(sleep_time)
