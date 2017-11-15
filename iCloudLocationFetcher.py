@@ -29,7 +29,7 @@ ACTION_NEEDED_ERROR_SLEEP_TIME = 3600
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.8.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-13"
+SCRIPT_DATE = "2017-11-15"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -333,7 +333,7 @@ def main():
                     sleep_time = next_sleep_time
 
         except PyiCloudAPIResponseError as e:
-            logger.warn("PyiCloudAPIResponseError: {0}. Sleeping for {1} seconds".format(str(e), str()))
+            logger.warn("PyiCloudAPIResponseError: {0}. Sleeping for {1} seconds".format(str(e), str(RECOVERABLE_ERROR_SLEEP_TIME)))
             icloud = None
             sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
         except requests.exceptions.ConnectionError as e:
