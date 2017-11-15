@@ -132,11 +132,11 @@ class MonitorDevice(object):
             if self.low_update_when_home_timespan[0] < self.low_update_when_home_timespan[1] \
                         and self.low_update_when_home_timespan[0] <  minutes_since_midnight < self.low_update_when_home_timespan[1]:
                 return min((self.low_update_when_home_timespan[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL)
-
-            if self.low_update_when_home_timespan[0] > self.low_update_when_home_timespan[1] \
-                        and (minutes_since_midnight > self.low_update_when_home_timespan[0]
-                            or minutes_since_midnight < self.low_update_when_home_timespan[1]):
-                return min(((24 * 60) - minutes_since_midnight + self.low_update_when_home_timespan[1]) * 60, MAX_RETRIEVE_INTERVAL)
+            else:
+                if minutes_since_midnight > self.low_update_when_home_timespan[0]:
+                    return min(((24 * 60) - minutes_since_midnight + self.low_update_when_home_timespan[1]) * 60, MAX_RETRIEVE_INTERVAL)
+                if minutes_since_midnight < self.low_update_when_home_timespan[1]:
+                    return min((self.low_update_when_home_timespan[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL)
 
         return DEFAULT_RETRIEVE_INTERVAL
 

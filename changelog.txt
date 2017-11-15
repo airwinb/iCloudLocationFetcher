@@ -3,6 +3,7 @@ Change history
 
 Master
 ------
+- ILF-30: Timeout will exceed "Low Updates" endtime
 - ILF-29: Warning is not logged with new set timeout
 - ILF-27: Improve handling of PyiCloudAPIResponseError and reduce sleep interval
 
