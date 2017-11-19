@@ -29,7 +29,7 @@ ACTION_NEEDED_ERROR_SLEEP_TIME = 3600
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.8.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-15"
+SCRIPT_DATE = "2017-11-19"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -337,7 +337,11 @@ def main():
             icloud = None
             sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
         except requests.exceptions.ConnectionError as e:
-            logger.exception("ConnectionError: {0}. Sleeping for {1} seconds".format(str(e), str(RECOVERABLE_ERROR_SLEEP_TIME)))
+            logger.warn("ConnectionError: {0}. Sleeping for {1} seconds".format(str(e), str(RECOVERABLE_ERROR_SLEEP_TIME)))
+            icloud = None
+            sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
+        except requests.Timeout as e:
+            logger.warn("Timout: {0}. Sleeping for {1} seconds".format(str(e), str(RECOVERABLE_ERROR_SLEEP_TIME)))
             icloud = None
             sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
         except:

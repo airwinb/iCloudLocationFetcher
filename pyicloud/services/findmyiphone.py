@@ -36,6 +36,7 @@ class FindMyiPhoneServiceManager(object):
         req = self.session.post(
             self._fmip_refresh_url,
             params=self.params,
+            timeout=30,
             data=json.dumps(
                 {
                     'clientContext': {
