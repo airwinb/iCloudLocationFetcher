@@ -1,15 +1,8 @@
 iCloudLocationFetcher.log
 iCloudLocationFetcher.conf
 .idea
-pyicloud
+*.pyc
 pyicloud.egg-info
-tox.ini
-LICENSE.txt
-location.py
 setup.py
 setup.cfg
 requirements.txt
-README.rst
-PKG-INFO
-MANIFEST.in
-log.py
