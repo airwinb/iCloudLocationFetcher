@@ -30,7 +30,7 @@ MAX_SESSION_TIME = 1800  # icloud will respond with HTTP 450 if session is not u
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.8.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-19"
+SCRIPT_DATE = "2017-11-20"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
