@@ -24,8 +24,9 @@ MAX_RETRIEVE_INTERVAL = 3600
 
 MIN_SLEEP_TIME = 1
 MAX_SLEEP_TIME = 3600
-RECOVERABLE_ERROR_SLEEP_TIME = 300
+RECOVERABLE_ERROR_SLEEP_TIME = 60
 ACTION_NEEDED_ERROR_SLEEP_TIME = 3600
+MAX_SESSION_TIME = 1800  # icloud will respond with HTTP 450 if session is not used within this time
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.8.0-SNAPSHOT"
@@ -278,12 +279,11 @@ def main():
     icloud = None
     while keep_running:
         try:
-            now = time.time()
             if icloud is None:
                 icloud = pyicloud.PyiCloudService(apple_id, apple_password, "~/.iCloudLocationFetcher")
                 if icloud.requires_2sa:
                     logger.error("Two-step authentication required. Please run twostep.py")
-                    sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
+                    sleep_time = ACTION_NEEDED_ERROR_SLEEP_TIME
                     icloud = None
                 else:
                     sleep_time = MIN_SLEEP_TIME
@@ -299,6 +299,7 @@ def main():
                             logger.warn("No iCloud device found with name '%s'" % monitor_device.name)
 
             if icloud is not None:
+                now = time.time()
                 next_sleep_time = MAX_SLEEP_TIME
                 for monitor_device in monitor_devices:
                     if monitor_device.get_next_retrieve_timestamp() < now:
@@ -330,7 +331,7 @@ def main():
                         next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
                         logger.debug("Update not needed yet for '%s'. Next update in %d seconds" % (monitor_device.name, next_update))
                         next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
-                    sleep_time = next_sleep_time
+                sleep_time = next_sleep_time
 
         except PyiCloudAPIResponseError as e:
             logger.warn("PyiCloudAPIResponseError: {0}. Sleeping for {1} seconds".format(str(e), str(RECOVERABLE_ERROR_SLEEP_TIME)))
@@ -345,11 +346,15 @@ def main():
             icloud = None
             sleep_time = RECOVERABLE_ERROR_SLEEP_TIME
         except:
-            logger.exception("Unexpected exception. Sleeping for {0} seconds".format(RECOVERABLE_ERROR_SLEEP_TIME))
+            logger.exception("Unexpected exception. Sleeping for {0} seconds".format(ACTION_NEEDED_ERROR_SLEEP_TIME))
             icloud = None
             sleep_time = ACTION_NEEDED_ERROR_SLEEP_TIME
 
-        logger.debug("Sleeping for %d seconds" % sleep_time)
+        if sleep_time >= MAX_SESSION_TIME:
+            icloud = None
+            logger.debug("Sleeping for %d seconds and resetting icloud connection" % sleep_time)
+        else:
+            logger.debug("Sleeping for %d seconds" % sleep_time)
         time.sleep(sleep_time)
 
 
