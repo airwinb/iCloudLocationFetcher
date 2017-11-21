@@ -270,6 +270,7 @@ def main():
 
     send_to_server = config.getboolean('GENERAL', 'send_to_server')
     home_radius = config.getfloat('GENERAL', 'home_radius')
+    logger.info("Using home_radius of %.1f km" % home_radius)
     devices_to_monitor_str = config.get('GENERAL', 'devices_to_monitor')
     devices_to_monitor = devices_to_monitor_str.strip().split('\n')
     monitor_devices = []
