@@ -17,6 +17,10 @@ devices_to_monitor =
     iPhone Bassie,http://localhost:8080/json.htm?type=command&param=udevice&idx=503&nvalue=0&svalue=__DISTANCE__
     iPhone Adriaan,http://localhost:8080/json.htm?type=command&param=udevice&idx=504&nvalue=0&svalue=__DISTANCE__
 
-# [Optional] When set to false the call to the server will be skipped
+# [Optional, default: True] When set to false the call to the server will be skipped
 # this can be useful for debugging purposes
-send_to_server = False
+send_to_server = True
+
+# [Optional, default: 0.0] When set the device is 'home' when the distance <= home_radius
+# this can be used to prevent too many update request when distance > 0.0 but <= home_radius
+home_radius = 0.0

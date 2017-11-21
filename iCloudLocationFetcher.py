@@ -30,7 +30,7 @@ MAX_SESSION_TIME = 1800  # icloud will respond with HTTP 450 if session is not u
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.8.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-20"
+SCRIPT_DATE = "2017-11-21"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -41,6 +41,8 @@ logger = None
 class MonitorDevice(object):
     __metaclass__ = abc.ABCMeta
     logger = None
+    send_to_server = True
+    home_radius = 0.0
 
     def __init__(self, name, update_url):
         self.name = name
@@ -60,6 +62,10 @@ class MonitorDevice(object):
     @classmethod
     def set_send_to_server(cls, value):
         cls.send_to_server = value
+
+    @classmethod
+    def set_home_radius(cls, value):
+        cls.home_radius = value
 
     def get_apple_device(self):
         return self.apple_device
@@ -120,7 +126,7 @@ class MonitorDevice(object):
         else:  # location is recent
             self.retrieve_retry_count = 0
             # if at home
-            if self.distance == 0.0:
+            if self.distance <= self.home_radius:
                 self.next_retrieve_timestamp = now + self.calculate_seconds_to_sleep_when_home()
             else:  # not at home, so use distance based interval in range [min, max]
                 self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
@@ -200,7 +206,7 @@ def main():
     global keep_running, logger
 
     # read configuration
-    config = ConfigParser.SafeConfigParser({'low_updates_when_home': None, 'send_to_server': "true"})
+    config = ConfigParser.SafeConfigParser({'low_updates_when_home': None, 'send_to_server': "true", 'home_radius': "0.0"})
     config_exists = False
     for loc in os.curdir, os.path.expanduser("~"), os.path.join(os.path.expanduser("~"), "iCloudLocationFetcher"):
         try:
@@ -263,6 +269,7 @@ def main():
             low_updates_when_home_timespan = [low_updates_when_home_start_minutes, low_updates_when_home_end_minutes]
 
     send_to_server = config.getboolean('GENERAL', 'send_to_server')
+    home_radius = config.getfloat('GENERAL', 'home_radius')
     devices_to_monitor_str = config.get('GENERAL', 'devices_to_monitor')
     devices_to_monitor = devices_to_monitor_str.strip().split('\n')
     monitor_devices = []
@@ -274,6 +281,7 @@ def main():
 
     MonitorDevice.set_logger(logger)
     MonitorDevice.set_send_to_server(send_to_server)
+    MonitorDevice.set_home_radius(home_radius)
 
     sleep_time = MIN_SLEEP_TIME
     icloud = None

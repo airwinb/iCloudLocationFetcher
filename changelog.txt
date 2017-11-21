@@ -3,6 +3,7 @@ Change history
 
 Master
 ------
+- ILF-38: Add optional config parameter to set home_radius
 - ILF-36: In case of communication errors the retry should happen faster
 - ILF-35: Always recreate connection after long sleep interval
 - ILF-33: Add timeout to requests to iCloud server
