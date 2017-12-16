@@ -3,6 +3,7 @@ Change history
 
 Master
 ------
+- ILF-40: Enable override of sleep intervals and timeout settings
 - ILF-38: Add optional config parameter to set home_radius
 - ILF-36: In case of communication errors the retry should happen faster
 - ILF-35: Always recreate connection after long sleep interval
@@ -21,7 +22,6 @@ Version 0.7.0, 2017-11-12
 - ILF-14: Extend the directories to search for the conf file to include the iCloudLocationFetcher directory
 - ILF-13: Running via init.d script requires shebang
 
-
 Version 0.6.0, 2017-11-06
 -------------------------
 - ILF-10: Update interval reverts to long default interval when close to home
@@ -29,7 +29,6 @@ Version 0.6.0, 2017-11-06
 - ILF-7: Improve retry mechanism for outdated location fetching
 - ILF-4: Use distance based update interval
 - ILF-3: Store sensitive apple data in separate file
-
 
 Version 0.5.0, 2017-11-03
 -------------------------

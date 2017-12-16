@@ -13,15 +13,16 @@ import sys
 import time
 from pyicloud.exceptions import PyiCloudAPIResponseError
 
-# Configuration
-NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ = 3600
+# Configuration overridable
 DEFAULT_RETRIEVE_INTERVAL = 270
-OUTDATED_LIMIT = 60  # if icloud location timestamp is older than this, then retry
-OUTDATED_LOCATION_RETRY_INTERVAL = 15
-MAX_RETRIEVE_RETRIES = 3  # if after this many retries the location is still old, then revert to DEFAULT_RETRIEVE_INTERVAL
-MIN_RETRIEVE_INTERVAL = 10
-MAX_RETRIEVE_INTERVAL = 3600
+MIN_RETRIEVE_INTERVAL = 15
+SPEED_SECONDS_PER_KM = 30
 
+# Fixed configuration
+NR_SECONDS_WHEN_ALWAYS_UPDATE_URL = 3600
+OUTDATED_LIMIT = 60  # if icloud location timestamp is older than this, then retry
+MAX_RETRIEVE_RETRIES = 3  # if after this many retries the location is still old, then revert to DEFAULT_RETRIEVE_INTERVAL
+MAX_RETRIEVE_INTERVAL = 3600
 MIN_SLEEP_TIME = 1
 MAX_SLEEP_TIME = 3600
 RECOVERABLE_ERROR_SLEEP_TIME = 60
@@ -30,7 +31,7 @@ MAX_SESSION_TIME = 1800  # icloud will respond with HTTP 450 if session is not u
 
 # Constants (Do not change)
 SCRIPT_VERSION = "0.8.0-SNAPSHOT"
-SCRIPT_DATE = "2017-11-21"
+SCRIPT_DATE = "2017-12-17"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
@@ -43,6 +44,10 @@ class MonitorDevice(object):
     logger = None
     send_to_server = True
     home_radius = 0.0
+    default_retrieve_interval = DEFAULT_RETRIEVE_INTERVAL
+    min_retrieve_interval = MIN_RETRIEVE_INTERVAL
+    speed_seconds_per_km = SPEED_SECONDS_PER_KM
+
 
     def __init__(self, name, update_url):
         self.name = name
@@ -67,6 +72,18 @@ class MonitorDevice(object):
     def set_home_radius(cls, value):
         cls.home_radius = value
 
+    @classmethod
+    def set_default_retrieve_interval(cls, value):
+        cls.default_retrieve_interval = value
+
+    @classmethod
+    def set_min_retrieve_interval(cls, value):
+        cls.min_retrieve_interval = value
+
+    @classmethod
+    def set_speed_seconds_per_km(cls, value):
+        cls.speed_seconds_per_km = value
+
     def get_apple_device(self):
         return self.apple_device
 
@@ -84,7 +101,7 @@ class MonitorDevice(object):
         # 1. real significant change
         # 2. if we haven't send an update for a long time
         if (distance != previous_distance and not (abs(distance - previous_distance == 0.1) and (distance >= 5.0))) \
-                or now - self.update_url_timestamp > NR_SECONDS_WHEN_ALWAYS_UPDATE_DOMOTICZ:
+                or now - self.update_url_timestamp > NR_SECONDS_WHEN_ALWAYS_UPDATE_URL:
             self.distance = distance
             self.send_to_update_url(previous_distance)
 
@@ -117,11 +134,11 @@ class MonitorDevice(object):
         if now - self.location_timestamp > OUTDATED_LIMIT:
             # can still retry to get up-to-date reading
             if self.retrieve_retry_count < MAX_RETRIEVE_RETRIES:
-                self.next_retrieve_timestamp = now + OUTDATED_LOCATION_RETRY_INTERVAL
+                self.next_retrieve_timestamp = now + self.min_retrieve_interval
                 self.retrieve_retry_count += 1
             else:  # use distance based interval in range [default, max]
-                self.next_retrieve_timestamp = now + max(DEFAULT_RETRIEVE_INTERVAL,
-                                                         min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
+                self.next_retrieve_timestamp = now + max(self.default_retrieve_interval,
+                                                         min(int(self.speed_seconds_per_km * self.distance), MAX_RETRIEVE_INTERVAL))
                 self.retrieve_retry_count = 0
         else:  # location is recent
             self.retrieve_retry_count = 0
@@ -129,7 +146,7 @@ class MonitorDevice(object):
             if self.distance <= self.home_radius:
                 self.next_retrieve_timestamp = now + self.calculate_seconds_to_sleep_when_home()
             else:  # not at home, so use distance based interval in range [min, max]
-                self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL, min(int(30 * self.distance), MAX_RETRIEVE_INTERVAL))
+                self.next_retrieve_timestamp = now + max(self.min_retrieve_interval, min(int(self.speed_seconds_per_km * self.distance), MAX_RETRIEVE_INTERVAL))
 
     def calculate_seconds_to_sleep_when_home(self):
         if self.low_update_when_home_timespan is not None:
@@ -145,7 +162,7 @@ class MonitorDevice(object):
                 if minutes_since_midnight < self.low_update_when_home_timespan[1]:
                     return min((self.low_update_when_home_timespan[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL)
 
-        return DEFAULT_RETRIEVE_INTERVAL
+        return self.default_retrieve_interval
 
 
 def distance_meters(origin, destination):
@@ -206,7 +223,12 @@ def main():
     global keep_running, logger
 
     # read configuration
-    config = ConfigParser.SafeConfigParser({'low_updates_when_home': None, 'send_to_server': "true", 'home_radius': "0.0"})
+    config = ConfigParser.SafeConfigParser({'low_updates_when_home': None,
+                                            'send_to_server': "true",
+                                            'home_radius': "0.0",
+                                            'default_retrieve_interval' : str(DEFAULT_RETRIEVE_INTERVAL),
+                                            'min_retrieve_interval' : str(MIN_RETRIEVE_INTERVAL),
+                                            'speed_seconds_per_km' : str(SPEED_SECONDS_PER_KM)})
     config_exists = False
     for loc in os.curdir, os.path.expanduser("~"), os.path.join(os.path.expanduser("~"), "iCloudLocationFetcher"):
         try:
@@ -270,7 +292,12 @@ def main():
 
     send_to_server = config.getboolean('GENERAL', 'send_to_server')
     home_radius = config.getfloat('GENERAL', 'home_radius')
-    logger.info("Using home_radius of %.1f km" % home_radius)
+    default_retrieve_interval = config.getint('GENERAL', 'default_retrieve_interval')
+    min_retrieve_interval = config.getint('GENERAL', 'min_retrieve_interval')
+    speed_seconds_per_km = config.getint('GENERAL', 'speed_seconds_per_km')
+    logger.info("Using home_radius of %.1f km, min retrieve interval of %ds, default retrieve interval of %ds, speed %d s/km"
+                % (home_radius, min_retrieve_interval, default_retrieve_interval, speed_seconds_per_km))
+
     devices_to_monitor_str = config.get('GENERAL', 'devices_to_monitor')
     devices_to_monitor = devices_to_monitor_str.strip().split('\n')
     monitor_devices = []
@@ -283,6 +310,9 @@ def main():
     MonitorDevice.set_logger(logger)
     MonitorDevice.set_send_to_server(send_to_server)
     MonitorDevice.set_home_radius(home_radius)
+    MonitorDevice.set_default_retrieve_interval(default_retrieve_interval)
+    MonitorDevice.set_min_retrieve_interval(min_retrieve_interval)
+    MonitorDevice.set_speed_seconds_per_km(speed_seconds_per_km)
 
     sleep_time = MIN_SLEEP_TIME
     icloud = None
