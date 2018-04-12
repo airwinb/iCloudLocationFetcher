@@ -208,6 +208,7 @@ class PyiCloudService(object):
             req = self.session.post(
                 self._base_login_url,
                 params=self.params,
+                timeout=30,
                 data=json.dumps(data)
             )
         except PyiCloudAPIResponseError as error:

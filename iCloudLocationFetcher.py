@@ -30,8 +30,8 @@ ACTION_NEEDED_ERROR_SLEEP_TIME = 3600
 MAX_SESSION_TIME = 1800  # icloud will respond with HTTP 450 if session is not used within this time
 
 # Constants (Do not change)
-SCRIPT_VERSION = "0.8.0-SNAPSHOT"
-SCRIPT_DATE = "2017-12-17"
+SCRIPT_VERSION = "0.8.1-SNAPSHOT"
+SCRIPT_DATE = "2018-04-12"
 URL_DISTANCE_PARAM = "__DISTANCE__"
 
 # Global variables
