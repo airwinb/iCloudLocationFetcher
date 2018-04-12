@@ -3,6 +3,7 @@ Change history
 
 Master
 ------
+- ILF-41: iOS11 sometimes gives inaccurate locations and fluctuates #43
 - ILF-40: Enable override of sleep intervals and timeout settings
 - ILF-38: Add optional config parameter to set home_radius
 - ILF-36: In case of communication errors the retry should happen faster

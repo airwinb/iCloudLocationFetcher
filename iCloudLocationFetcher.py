@@ -98,7 +98,7 @@ class MonitorDevice(object):
         self.location_timestamp = icloud_location_timestamp
         now = time.time()
         # send update if
-        # 1. real significant change
+        # 1. real significant change, or
         # 2. if we haven't send an update for a long time
         if (distance != previous_distance and not (abs(distance - previous_distance == 0.1) and (distance >= 5.0))) \
                 or now - self.update_url_timestamp > NR_SECONDS_WHEN_ALWAYS_UPDATE_URL:
@@ -349,16 +349,22 @@ def main():
                                 location = apple_device.location()
                                 if location is not None:
                                     logger.debug(location)
+                                    logger.debug("location: type=%s, finished=%s, horizontalAccuracy=%f" % (location['positionType'], location['locationFinished'], location['horizontalAccuracy']))
                                     location_timestamp = location['timeStamp'] / 1000
                                     device_location = (location['latitude'], location['longitude'])
                                     distance = distance_meters(home_location, device_location)
                                     rounded_distance_km = math.floor(distance / 100) / 10.0
-                                    monitor_device.update(rounded_distance_km, location_timestamp)
                                     now = time.time()
                                     location_seconds_ago = int(now - location_timestamp)
-                                    next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
-                                    next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
-                                    logger.info("Device '%s' was %d seconds ago at %d meter, or rounded at %.1f km. Next update in %d seconds" % (monitor_device.name, location_seconds_ago, distance, rounded_distance_km, next_update))
+                                    accuracy = math.floor(location['horizontalAccuracy'])
+                                    if accuracy < 1000 * home_radius:
+                                        monitor_device.update(rounded_distance_km, location_timestamp)
+                                        next_update = int(monitor_device.get_next_retrieve_timestamp() - now)
+                                        next_sleep_time = min(next_sleep_time, next_update + MIN_SLEEP_TIME)
+                                    else:
+                                        next_update = min_retrieve_interval
+                                        next_sleep_time = min_retrieve_interval
+                                    logger.info("Device '%s' was %d seconds ago at %d meter with accuracy %d, or rounded at %.1f km. Next update in %d seconds" % (monitor_device.name, location_seconds_ago, distance, accuracy, rounded_distance_km, next_update))
                             else:
                                 next_sleep_time = min(next_sleep_time, ACTION_NEEDED_ERROR_SLEEP_TIME)
                                 logger.warn("Location disabled for '%s'. Next update in %d seconds" % (monitor_device.name, ACTION_NEEDED_ERROR_SLEEP_TIME))
