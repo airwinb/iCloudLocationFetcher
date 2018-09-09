@@ -20,17 +20,3 @@ devices_to_monitor =
 # [Optional, default: True] When set to false the call to the server will be skipped
 # this can be useful for debugging purposes
 send_to_server = True
-
-# [Optional, default: 0.0] When set the device is 'home' when the distance <= home_radius
-# this can be used to prevent too many update request when distance > 0.0 but <= home_radius
-#home_radius = 0.0
-
-# [Optional, default: 270] Number of seconds between retrieving location when at home
-#default_retrieve_interval = 270
-
-# [Optional, default: 15] Minimum number of seconds between subsequent calls to retrieve location
-#min_retrieve_interval = 15
-
-# [Optional, default: 30] Speed in number of seconds / km. It determines when the next call to iCloud will happen
-# The value 30 corresponds with 120 km/h
-#speed_seconds_per_km = 30
