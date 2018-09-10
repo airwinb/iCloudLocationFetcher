@@ -96,8 +96,12 @@ class MonitorDevice(object):
                 self.update_url_timestamp = time.time()
                 self.logger.debug("%s -> %s" % (url, response))
                 if response.ok:
+                    if self.location is None:
+                        old_distance_km = -1.0
+                    else:
+                        old_distance_km = self.location.rounded_distance_km
                     self.logger.info("Successfully updated distance of '%s' from %.1f to %.1f km" %
-                                     (self.name, self.distance_km, new_distance_km))
+                                     (self.name, old_distance_km, new_distance_km))
                 else:
                     self.logger.warn("Unable to update distance of '%s' using '%s'. Response: %s" %
                                      (self.name, url, response))
