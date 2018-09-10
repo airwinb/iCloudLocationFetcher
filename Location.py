@@ -66,7 +66,8 @@ class Location(object):
         if other_location is None:
             return False
         distance_to_other = self.distance_to(other_location)
-        if distance_to_other < self.accuracy or distance_to_other < other_location.accuracy:
+        if distance_to_other < max(self.accuracy, ACCURATE_LIMIT_IN_M) \
+                or distance_to_other < max(other_location.accuracy, ACCURATE_LIMIT_IN_M):
             return True
         return False
 
