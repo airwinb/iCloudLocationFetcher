@@ -2,7 +2,6 @@ import abc
 import math
 import time
 
-OUTDATED_LIMIT_IN_S = 60   # if location timestamp is older than this, then retry
 ACCURATE_LIMIT_IN_M = 100  # if location accuracy is smaller than this then it is accurate
 ACCURATE_LIMIT_WHEN_HOME_IN_M = 300  # if home, if accuracy is within this percentage of distance, then accurate enough
 ACCURACY_TO_DISTANCE_PERCENTAGE = 20  # if accuracy is within this percentage of the distance, then accurate enough
@@ -47,10 +46,8 @@ class Location(object):
     def distance_to(self, other_location):
         return distance_meters((self.latitude, self.longitude), (other_location.latitude, other_location.longitude))
 
-    def is_recent_enough(self):
-        if time.time() - self.timestamp < OUTDATED_LIMIT_IN_S:
-            return True
-        return False
+    def is_recent_enough(self, max_elapsed_time_in_s):
+        return time.time() - self.timestamp < max_elapsed_time_in_s
 
     def is_accurate_enough(self):
         if self.accuracy < ACCURATE_LIMIT_IN_M:
@@ -62,20 +59,24 @@ class Location(object):
             return True
         return False
 
+    def is_home(self):
+        return self.rounded_distance_km == 0.0
+
     def can_be_same_location(self, other_location):
         if other_location is None:
             return False
-        distance_to_other = self.distance_to(other_location)
-        if distance_to_other < max(self.accuracy, ACCURATE_LIMIT_IN_M) \
-                or distance_to_other < max(other_location.accuracy, ACCURATE_LIMIT_IN_M):
+        if self.is_home() and other_location.is_home():
             return True
-        return False
+        distance_to_other = self.distance_to(other_location)
+        return distance_to_other < min(self.accuracy, other_location.accuracy)
 
     def is_more_accurate(self, other_location):
         if other_location is None:
             return True
         if self.accuracy < other_location.accuracy:
             return True
+        if self.accuracy == other_location.accuracy:
+            return self.distance_to_home < other_location.distance_to_home
         return False
 
     def __str__(self):

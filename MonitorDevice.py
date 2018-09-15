@@ -6,16 +6,15 @@ import time
 from constants import ACTION_NEEDED_ERROR_SLEEP_TIME
 from Location import Location
 
-MIN_RETRIEVE_INTERVAL_IN_S = 10
-DEFAULT_RETRIEVE_INTERVAL_IN_S = 300  # used when home
+MIN_RETRIEVE_INTERVAL_IN_S = 15
 MAX_RETRIEVE_INTERVAL_IN_S = 3600
+DEFAULT_RETRIEVE_INTERVAL_IN_S = 300  # used when home, or long at same location near home
 
-RETRY_EXPONENTIAL_BASE_IN_S = 5
+RETRY_EXPONENTIAL_BASE_IN_S = 3
 SPEED_SECONDS_PER_KM = 45
 
 URL_DISTANCE_PARAM = "__DISTANCE__"
 OUTDATED_LIMIT_IN_S = 60   # if icloud location timestamp is older than this, then retry
-NR_SECONDS_WHEN_ALWAYS_UPDATE_URL = 3600
 ACCURACY_TO_DISTANCE_PERCENTAGE = 20
 
 
@@ -28,12 +27,13 @@ class MonitorDevice(object):
         self.name = name
         self.update_url = update_url
         self.update_url_timestamp = 0
-        self.low_update_when_home_timespan = None
+        self.home_period = None
 
         self.apple_device = None
         self.location = None
         self.next_retrieve_timestamp = time.time()
         self.retrieve_retry_count = 0
+        self.not_moving_count = 0
 
     @classmethod
     def set_logger(cls, value):
@@ -49,28 +49,24 @@ class MonitorDevice(object):
     def set_apple_device(self, value):
         self.apple_device = value
 
-    def set_low_update_when_home_timespan(self, value):
-        self.low_update_when_home_timespan = value
+    def set_home_period(self, value):
+        self.home_period = value
 
     def get_next_retrieve_timestamp(self):
         return self.next_retrieve_timestamp
 
     def should_update(self):
-        now = time.time()
-        if self.next_retrieve_timestamp < now:
-            return True
-        else:
-            return False
+        return self.next_retrieve_timestamp < time.time()
 
     def is_apple_device_ok(self):
         if self.apple_device is not None:
             if self.apple_device.content['locationEnabled']:
                 return True
             else:
-                self.logger.warn("Location disabled for '%s'. Next update in %d seconds" % (
+                self.logger.warn("Location disabled for '%s'. Next retry in %d seconds" % (
                     self.name, ACTION_NEEDED_ERROR_SLEEP_TIME))
         else:
-            self.logger.warn("Device '%s' not found. Next update in %d seconds" % (
+            self.logger.warn("Device '%s' not found. Next retry in %d seconds" % (
                 self.name, ACTION_NEEDED_ERROR_SLEEP_TIME))
         return False
 
@@ -84,10 +80,25 @@ class MonitorDevice(object):
             accuracy = math.floor(apple_location['horizontalAccuracy'])
             return Location(apple_location['latitude'], apple_location['longitude'], accuracy, location_timestamp)
         else:
-            self.logger.warn("Unable to get the location for device %s" % self.name)
+            self.logger.warn("Unable to get the location for device %s. Next retry in %d seconds" %
+                             (self.name, ACTION_NEEDED_ERROR_SLEEP_TIME))
             return None
 
-    def send_to_update_url(self, new_distance_km):
+    def is_within_home_period(self):
+        if self.home_period is None:
+            return False
+
+        # use next interval based on low_update_when_home_timespan
+        now_dt = datetime.datetime.now()
+        minutes_since_midnight = \
+            math.floor((now_dt - now_dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() / 60)
+        if self.home_period[0] < self.home_period[1]:
+            return self.home_period[0] < minutes_since_midnight < self.home_period[1]
+        else:
+            return minutes_since_midnight > self.home_period[0] or minutes_since_midnight < self.home_period[1]
+
+
+    def send_to_update_url(self, old_distance_km, new_distance_km):
         url = self.update_url.replace(URL_DISTANCE_PARAM, str(new_distance_km))
         if self.send_to_server:
             self.logger.debug("About to update '%s' with '%s'" % (self.name, url))
@@ -96,10 +107,6 @@ class MonitorDevice(object):
                 self.update_url_timestamp = time.time()
                 self.logger.debug("%s -> %s" % (url, response))
                 if response.ok:
-                    if self.location is None:
-                        old_distance_km = -1.0
-                    else:
-                        old_distance_km = self.location.rounded_distance_km
                     self.logger.info("Successfully updated distance of '%s' from %.1f to %.1f km" %
                                      (self.name, old_distance_km, new_distance_km))
                 else:
@@ -111,6 +118,16 @@ class MonitorDevice(object):
             self.update_url_timestamp = time.time()
             self.logger.info("Skipping sending update for '%s' to '%s'" % (self.name, url))
 
+    def log_update_message(self, now, status_message, new_location):
+        next_update = self.next_retrieve_timestamp - now
+        next_message = 'Next regular update'
+        if self.retrieve_retry_count > 0:
+            next_message = 'Retry %d' % self.retrieve_retry_count
+        elif self.not_moving_count > 0:
+            next_message = 'Next increased (%d) update' % self.not_moving_count
+        self.logger.info("%s. Device '%s' was at %s. %s in %d seconds"
+                         % (status_message, self.name, new_location, next_message, next_update))
+
     def retrieve_location_and_update(self):
         if self.is_apple_device_ok():
             retrieved_location = self.get_location()
@@ -118,38 +135,69 @@ class MonitorDevice(object):
             if retrieved_location is not None:
                 self.logger.debug("Retrieved location: %s" % retrieved_location)
                 now = time.time()
+                old_location = self.location
 
-                use_location = False
-                if retrieved_location.can_be_same_location(self.location):
-                    if retrieved_location.is_more_accurate(self.location):
-                        location_message = 'More accurate location retrieved'
-                        use_location = True
+                # any location is better than no location
+                if old_location is None:
+                    self.location = retrieved_location
+                    self.set_next_retrieve_timestamp(now)
+                    self.log_update_message(now, 'Setting initial location', retrieved_location)
+                    return
+
+                # check if location can be used
+                usable = False
+                status_message = ''
+                if retrieved_location.is_recent_enough(OUTDATED_LIMIT_IN_S):
+                    if retrieved_location.is_accurate_enough():
+                        usable = True
                     else:
-                        location_message = 'Same or less accurate location retrieved'
+                        status_message = 'Location not accurate enough'
                 else:
-                    location_message = 'New location retrieved'
-                    use_location = True
+                    status_message = 'Location not recent enough'
+
+                if not usable:
+                    self.retrieve_retry_count += 1
+                    self.set_next_retrieve_timestamp(now)
+                    self.log_update_message(now, status_message, retrieved_location)
+                    return
+
+                # location is usable, check what to do with it
+                self.retrieve_retry_count = 0
+                use_location = True
+                if retrieved_location.is_home():
+                    if old_location.is_home():
+                        if retrieved_location.is_more_accurate(self.location):
+                            status_message = 'Still at home but using more accurate location'
+                        else:
+                            status_message = 'Still at home'
+                            use_location = False
+                    else:
+                        status_message = 'Arrived home'
+                else:
+                    if old_location.is_home():
+                        status_message = 'Left home'
+                    else:
+                        if retrieved_location.can_be_same_location(old_location):
+                            if retrieved_location.is_more_accurate(self.location):
+                                status_message = 'Not moving but using more accurate location'
+                            else:
+                                status_message = 'Not moving'
+                                use_location = False
+                            self.not_moving_count += 1
+                        else:
+                            status_message = 'On the move'
+                            self.not_moving_count = 0
 
                 if use_location:
-                    if self.location is None \
-                            or retrieved_location.rounded_distance_km != self.location.rounded_distance_km:
-                        self.send_to_update_url(retrieved_location.rounded_distance_km)
                     self.location = retrieved_location
-
-                if retrieved_location.is_recent_enough() and retrieved_location.is_accurate_enough():
-                    self.retrieve_retry_count = 0
-                    next_message = 'update'
-                else:
-                    self.retrieve_retry_count += 1
-                    next_message = 'retry'
-
                 self.set_next_retrieve_timestamp(now)
-                next_update = self.next_retrieve_timestamp - now
-                self.logger.info("%s. Device '%s' was at %s. Next %s in %d seconds"
-                            % (location_message, self.name, retrieved_location, next_message, next_update))
+                self.log_update_message(now, status_message, retrieved_location)
+                if retrieved_location.rounded_distance_km != old_location.rounded_distance_km:
+                    self.send_to_update_url(old_location.rounded_distance_km, retrieved_location.rounded_distance_km)
+
             else:
                 self.retrieve_retry_count = 0
-                self.next_retrieve_timestamp = time.time() + DEFAULT_RETRIEVE_INTERVAL_IN_S
+                self.next_retrieve_timestamp = time.time() + ACTION_NEEDED_ERROR_SLEEP_TIME
         else:
             self.retrieve_retry_count = 0
             self.next_retrieve_timestamp = time.time() + ACTION_NEEDED_ERROR_SLEEP_TIME
@@ -158,38 +206,44 @@ class MonitorDevice(object):
         # all went well, location is recent and accurate
         if self.retrieve_retry_count == 0:
             # if at home
-            if self.location.rounded_distance_km == 0.0:
+            if self.location.is_home():
                 self.next_retrieve_timestamp = now + self.calculate_seconds_to_sleep_when_home()
             else:  # not at home, so use distance based interval in range [min, max]
-                self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL_IN_S,
-                                                         min(int(SPEED_SECONDS_PER_KM * self.location.rounded_distance_km),
-                                                             MAX_RETRIEVE_INTERVAL_IN_S))
+                regular_wait_seconds = int(SPEED_SECONDS_PER_KM * self.location.rounded_distance_km)
+                if regular_wait_seconds < DEFAULT_RETRIEVE_INTERVAL_IN_S:
+                    # optionally increase waiting and use distance based interval in [min, DEFAULT]
+                    self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL_IN_S,
+                        min(regular_wait_seconds + int(math.pow(RETRY_EXPONENTIAL_BASE_IN_S, self.not_moving_count)),
+                           DEFAULT_RETRIEVE_INTERVAL_IN_S))
+                else:
+                    # use regular interval in [min, max]
+                    self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL_IN_S,
+                        min(regular_wait_seconds + int(math.pow( RETRY_EXPONENTIAL_BASE_IN_S, self.not_moving_count)),
+                            DEFAULT_RETRIEVE_INTERVAL_IN_S))
         else:
             distance_based_timeout_in_s = int(SPEED_SECONDS_PER_KM * self.location.rounded_distance_km)
             if distance_based_timeout_in_s < DEFAULT_RETRIEVE_INTERVAL_IN_S:
                 # use exponential retry time in range [min, default]
                 self.next_retrieve_timestamp = now + min(MIN_RETRIEVE_INTERVAL_IN_S +
-                    self.retrieve_retry_count * self.retrieve_retry_count * RETRY_EXPONENTIAL_BASE_IN_S,
-                                                         DEFAULT_RETRIEVE_INTERVAL_IN_S)
+                    math.pow(RETRY_EXPONENTIAL_BASE_IN_S, self.retrieve_retry_count), DEFAULT_RETRIEVE_INTERVAL_IN_S)
             else:
                 # use exponential retry time in range [min, distance_based]
                 self.next_retrieve_timestamp = now + min(MIN_RETRIEVE_INTERVAL_IN_S +
-                    self.retrieve_retry_count * self.retrieve_retry_count * RETRY_EXPONENTIAL_BASE_IN_S,
-                                                         distance_based_timeout_in_s)
+                    math.pow(RETRY_EXPONENTIAL_BASE_IN_S, self.retrieve_retry_count), distance_based_timeout_in_s)
 
     def calculate_seconds_to_sleep_when_home(self):
-        if self.low_update_when_home_timespan is not None:
+        if self.home_period is not None:
             # use next interval based on low_update_when_home_timespan
             now_dt = datetime.datetime.now()
             minutes_since_midnight = \
                 math.floor((now_dt - now_dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() / 60)
-            if self.low_update_when_home_timespan[0] < self.low_update_when_home_timespan[1] \
-                and self.low_update_when_home_timespan[0] < minutes_since_midnight < self.low_update_when_home_timespan[1]:
-                return min((self.low_update_when_home_timespan[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL_IN_S)
+            if self.home_period[0] < self.home_period[1] \
+                and self.home_period[0] < minutes_since_midnight < self.home_period[1]:
+                return min((self.home_period[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL_IN_S)
             else:
-                if minutes_since_midnight > self.low_update_when_home_timespan[0]:
-                    return min(((24 * 60) - minutes_since_midnight + self.low_update_when_home_timespan[1]) * 60, MAX_RETRIEVE_INTERVAL_IN_S)
-                if minutes_since_midnight < self.low_update_when_home_timespan[1]:
-                    return min((self.low_update_when_home_timespan[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL_IN_S)
+                if minutes_since_midnight > self.home_period[0]:
+                    return min(((24 * 60) - minutes_since_midnight + self.home_period[1]) * 60, MAX_RETRIEVE_INTERVAL_IN_S)
+                if minutes_since_midnight < self.home_period[1]:
+                    return min((self.home_period[1] - minutes_since_midnight) * 60, MAX_RETRIEVE_INTERVAL_IN_S)
 
         return DEFAULT_RETRIEVE_INTERVAL_IN_S

@@ -143,7 +143,7 @@ def main():
     for device_to_monitor in devices_to_monitor:
         name_and_url = device_to_monitor.split(',')
         monitor_device = MonitorDevice(name_and_url[0], name_and_url[1])
-        monitor_device.set_low_update_when_home_timespan(low_updates_when_home_timespan)
+        monitor_device.set_home_period(low_updates_when_home_timespan)
         monitor_devices.append(monitor_device)
 
     MonitorDevice.set_logger(logger)
