@@ -216,10 +216,9 @@ class MonitorDevice(object):
                         min(regular_wait_seconds + int(math.pow(RETRY_EXPONENTIAL_BASE_IN_S, self.not_moving_count)),
                            DEFAULT_RETRIEVE_INTERVAL_IN_S))
                 else:
-                    # use regular interval in [min, max]
-                    self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL_IN_S,
-                        min(regular_wait_seconds + int(math.pow( RETRY_EXPONENTIAL_BASE_IN_S, self.not_moving_count)),
-                            DEFAULT_RETRIEVE_INTERVAL_IN_S))
+                    # use distance based interval in [distance_based, max]
+                    self.next_retrieve_timestamp = now + min(regular_wait_seconds +
+                        int(math.pow(RETRY_EXPONENTIAL_BASE_IN_S, self.not_moving_count)), MAX_RETRIEVE_INTERVAL_IN_S)
         else:
             distance_based_timeout_in_s = int(SPEED_SECONDS_PER_KM * self.location.rounded_distance_km)
             if distance_based_timeout_in_s < DEFAULT_RETRIEVE_INTERVAL_IN_S:
