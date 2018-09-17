@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import abc
 import math
 import time
@@ -81,5 +82,5 @@ class Location(object):
 
     def __str__(self):
         seconds_ago = time.time() - self.timestamp
-        return "%d meters +/- %d meters, %d seconds ago, rounded %.1f km" \
+        return "%d ± %dm, -%ds, %.1fkm" \
                % (self.distance_to_home, self.accuracy, seconds_ago, self.rounded_distance_km)
