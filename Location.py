@@ -69,7 +69,7 @@ class Location(object):
         if self.is_home() and other_location.is_home():
             return True
         distance_to_other = self.distance_to(other_location)
-        return distance_to_other < min(self.accuracy, other_location.accuracy)
+        return distance_to_other < max(self.accuracy, other_location.accuracy)
 
     def is_more_accurate(self, other_location):
         if other_location is None:
