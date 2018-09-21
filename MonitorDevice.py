@@ -165,7 +165,8 @@ class MonitorDevice(object):
         self.retrieve_retry_count = 0
         return 'Location is acceptable'
 
-    def update_next_retrieve_timestamp(self, now):
+    def update_next_retrieve_timestamp(self):
+        now = time.time()
         # all went well, location is recent and accurate
         if self.retrieve_retry_count == 0:
             # if at home
@@ -180,7 +181,7 @@ class MonitorDevice(object):
                            DEFAULT_RETRIEVE_INTERVAL_IN_S))
                 else:
                     # use distance based interval
-                    self.next_retrieve_timestamp = regular_wait_seconds
+                    self.next_retrieve_timestamp = now + regular_wait_seconds
         else:
             (retry_div, retry_mod) = divmod(self.retrieve_retry_count, 3)
             additional_minutes = 0
@@ -190,7 +191,8 @@ class MonitorDevice(object):
             self.next_retrieve_timestamp = now + max(MIN_RETRIEVE_INTERVAL_IN_S,
                         min(MIN_RETRIEVE_INTERVAL_IN_S + additional_minutes * 60, DEFAULT_RETRIEVE_INTERVAL_IN_S))
 
-    def log_update_message(self, now, status_message, location_message):
+    def log_update_message(self, status_message, location_message):
+        now = time.time()
         next_update = self.next_retrieve_timestamp - now
         next_message = 'Next update'
         if self.retrieve_retry_count > 0:
@@ -214,10 +216,9 @@ class MonitorDevice(object):
                         old_distance_km = self.location_stored.rounded_distance_km
                     if old_distance_km != self.location_retrieved.rounded_distance_km:
                         self.send_to_update_url(old_distance_km, self.location_retrieved.rounded_distance_km)
-                now = time.time()
                 location_message = self.update_retrieve_retry_count()
-                self.update_next_retrieve_timestamp(now)
-                self.log_update_message(now, status_message, location_message)
+                self.update_next_retrieve_timestamp()
+                self.log_update_message(status_message, location_message)
                 if location_is_better:
                     self.location_stored = self.location_retrieved
             else:
