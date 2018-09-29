@@ -1,8 +1,9 @@
 Change history
 
 
-Master
-------
+Version 1.0.0, 2018-09-29
+-------------------------
+- ILF-43: Use Relative accuracy + Refresh interval
 - ILF-42: Pyicloud can hang during authenticating due to infinite timeout value
 - ILF-41: iOS11 sometimes gives inaccurate locations and fluctuates #43
 - ILF-40: Enable override of sleep intervals and timeout settings
