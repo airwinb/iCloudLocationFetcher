@@ -6,7 +6,7 @@ import time
 ACCURATE_LIMIT_IN_M = 100  # if location accuracy is smaller than this then it is accurate
 ACCURATE_LIMIT_WHEN_HOME_IN_M = 300  # if home, if accuracy is within this percentage of distance, then accurate enough
 ACCURACY_TO_DISTANCE_PERCENTAGE = 20  # if accuracy is within this percentage of the distance, then accurate enough
-
+MIN_ACCURACY_BETWEEN_LOCATIONS = 50  # if two locations are within this limit then they can be the same location
 
 def distance_meters(origin, destination):
     lat1, lon1 = origin
@@ -69,7 +69,7 @@ class Location(object):
         if self.is_home() and other_location.is_home():
             return True
         distance_to_other = self.distance_to(other_location)
-        return distance_to_other < max(self.accuracy, other_location.accuracy)
+        return distance_to_other < max(self.accuracy, other_location.accuracy, MIN_ACCURACY_BETWEEN_LOCATIONS)
 
     def is_more_accurate(self, other_location):
         if other_location is None:
