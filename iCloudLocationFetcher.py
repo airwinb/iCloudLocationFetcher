@@ -19,8 +19,8 @@ RECOVERABLE_ERROR_SLEEP_TIME = 60
 MAX_SESSION_TIME = 1800  # icloud will respond with HTTP 450 if session is not used within this time
 
 # Constants (Do not change)
-SCRIPT_VERSION = "0.9.0-SNAPSHOT"
-SCRIPT_DATE = "2018-09-08"
+SCRIPT_VERSION = "1.0.0"
+SCRIPT_DATE = "2018-09-29"
 
 # Global variables
 keep_running = True
